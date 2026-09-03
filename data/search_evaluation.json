@@ -1,0 +1,90 @@
+{
+  "name": "smartgongdan-search-benchmark",
+  "version": "2026-08-30-v1",
+  "cases": [
+    {
+      "id": "SEARCH-001",
+      "title": "VPN认证服务器不可用",
+      "description": "设备证书可能过期，重启客户端后仍然认证失败",
+      "expected_references": ["KB001", "HIST-001"]
+    },
+    {
+      "id": "SEARCH-002",
+      "title": "VPN连接后内网打不开",
+      "description": "VPN显示已连接，但代码仓库和内部服务器都无法访问",
+      "expected_references": ["KB003", "HIST-003"]
+    },
+    {
+      "id": "SEARCH-003",
+      "title": "企业无线网络无法加入",
+      "description": "WiFi密码正确但提示无法加入，可能与无线证书有关",
+      "expected_references": ["KB004", "HIST-004"]
+    },
+    {
+      "id": "SEARCH-004",
+      "title": "内部域名解析失败",
+      "description": "使用IP地址可以访问，使用域名时DNS解析失败",
+      "expected_references": ["KB005", "HIST-006"]
+    },
+    {
+      "id": "SEARCH-005",
+      "title": "域账号密码过期",
+      "description": "登录电脑时提示密码已过期，需要更新密码并同步VPN凭据",
+      "expected_references": ["KB006", "HIST-018"]
+    },
+    {
+      "id": "SEARCH-006",
+      "title": "账号连续输错后锁定",
+      "description": "电脑和OA都提示账号被锁定，清除旧凭据后重新验证",
+      "expected_references": ["KB007", "HIST-019"]
+    },
+    {
+      "id": "SEARCH-007",
+      "title": "共享文件夹访问被拒绝",
+      "description": "同部门其他同事正常，当前账号没有共享目录权限",
+      "expected_references": ["KB008", "HIST-021"]
+    },
+    {
+      "id": "SEARCH-008",
+      "title": "Office安装程序自动回滚",
+      "description": "安装接近完成时提示失败，需要清理旧安装缓存和运行库",
+      "expected_references": ["KB009", "HIST-009"]
+    },
+    {
+      "id": "SEARCH-009",
+      "title": "办公应用启动后闪退",
+      "description": "程序频繁崩溃，可能存在插件冲突或运行库问题",
+      "expected_references": ["KB010", "HIST-013"]
+    },
+    {
+      "id": "SEARCH-010",
+      "title": "打印机离线且任务排队",
+      "description": "多人无法打印，需要检查网络并清理打印队列",
+      "expected_references": ["KB011", "HIST-027", "HIST-028"]
+    },
+    {
+      "id": "SEARCH-011",
+      "title": "外接显示器无信号",
+      "description": "重新插拔视频线仍然黑屏，需要检查输入源和接口",
+      "expected_references": ["KB012", "HIST-025"]
+    },
+    {
+      "id": "SEARCH-012",
+      "title": "笔记本按电源没有反应",
+      "description": "更换插座仍无法开机，需要执行供电和放电复位检查",
+      "expected_references": ["KB013", "HIST-024"]
+    },
+    {
+      "id": "SEARCH-013",
+      "title": "会议软件找不到摄像头",
+      "description": "外接摄像头无法识别，需要检查系统隐私权限和默认设备",
+      "expected_references": ["KB014", "HIST-030"]
+    },
+    {
+      "id": "SEARCH-014",
+      "title": "邮件服务器配置错误",
+      "description": "更换电脑后邮箱登录失败，提示服务器地址或端口不正确",
+      "expected_references": ["KB015", "HIST-015"]
+    }
+  ]
+}

@@ -1,0 +1,37 @@
+:root {
+  color-scheme: light;
+
+  --brand-primary: #0c66e4;
+  --brand-hover: #0055cc;
+  --brand-ai: #5e4db2;
+  --text-primary: #172b4d;
+  --text-secondary: #44546f;
+  --text-muted: #626f86;
+  --border-default: #dfe1e6;
+  --surface-canvas: #f7f8fa;
+  --surface-raised: #ffffff;
+  --surface-subtle: #f1f2f4;
+  --surface-selected: #e9f2ff;
+  --status-success: #216e4e;
+  --status-warning: #7f5f01;
+  --status-danger: #ae2e24;
+
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --shadow-subtle: 0 1px 2px rgb(9 30 66 / 8%);
+  --header-height: 56px;
+  --sidebar-width: 224px;
+  --content-max: 960px;
+  --form-max: 720px;
+}

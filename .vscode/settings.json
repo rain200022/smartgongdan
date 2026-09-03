@@ -2,9 +2,26 @@
   "python.defaultInterpreterPath": "${workspaceFolder}\\.venv\\Scripts\\python.exe",
   "python.testing.pytestEnabled": true,
   "python.testing.pytestArgs": ["tests"],
+  "mypy-type-checker.args": ["--config-file", "${workspaceFolder}/pyproject.toml"],
   "editor.formatOnSave": true,
+  "eslint.workingDirectories": ["./frontend"],
+  "typescript.tsdk": "frontend/node_modules/typescript/lib",
   "[python]": {
-    "editor.defaultFormatter": "charliermarsh.ruff"
+    "editor.defaultFormatter": "charliermarsh.ruff",
+    "editor.codeActionsOnSave": {
+      "source.fixAll.ruff": "explicit",
+      "source.organizeImports.ruff": "explicit"
+    }
+  },
+  "[vue]": {
+    "editor.defaultFormatter": "Vue.volar",
+    "editor.codeActionsOnSave": {
+      "source.fixAll.eslint": "explicit"
+    }
+  },
+  "[typescript]": {
+    "editor.codeActionsOnSave": {
+      "source.fixAll.eslint": "explicit"
+    }
   }
 }
-

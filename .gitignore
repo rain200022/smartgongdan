@@ -9,3 +9,8 @@ htmlcov/
 .idea/
 .vscode/*.log
 
+# Frontend
+frontend/node_modules/
+frontend/dist/
+frontend/.env
+*.tsbuildinfo

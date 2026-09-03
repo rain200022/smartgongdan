@@ -1,0 +1,27 @@
+{
+  "name": "smartgongdan-classification-robustness",
+  "version": "2026-09-03-v1",
+  "description": "30 条人工标注基础样例的受控表达变体，仅用于输入鲁棒性测试。",
+  "variants": [
+    {
+      "id": "original",
+      "title_template": "{title}",
+      "description_template": "{description}"
+    },
+    {
+      "id": "service-desk",
+      "title_template": "请协助处理：{title}",
+      "description_template": "现象记录：{description}。问题仍然存在。"
+    },
+    {
+      "id": "redacted-context",
+      "title_template": "办公环境反馈：{title}",
+      "description_template": "联系人 [EMAIL]，设备地址 [IP_ADDRESS]。{description}"
+    },
+    {
+      "id": "structured-form",
+      "title_template": "[故障申报] {title}",
+      "description_template": "故障现象：{description}\n影响范围：当前用户。"
+    }
+  ]
+}

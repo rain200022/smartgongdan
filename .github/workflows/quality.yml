@@ -1,0 +1,44 @@
+name: quality
+
+permissions:
+  contents: read
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg17
+        env:
+          POSTGRES_DB: smartgongdan
+          POSTGRES_USER: smartgongdan
+          POSTGRES_PASSWORD: smartgongdan
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U smartgongdan -d smartgongdan"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql+psycopg://smartgongdan:smartgongdan@localhost:5432/smartgongdan
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        with:
+          enable-cache: true
+          python-version: "3.11"
+          version: "0.12.3"
+      - run: uv sync --locked
+      - run: uv run ruff format --check .
+      - run: uv run ruff check .
+      - run: uv run mypy
+      - run: uv run pytest --cov=app --cov-fail-under=90
+      - run: uv pip check
+      - run: uv run alembic upgrade head
+      - run: uv run alembic check

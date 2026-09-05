@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.api.dependencies import CurrentUser, StaffUser
 from app.db.session import get_db
-from app.models.ticket import TicketStatus
+from app.models.ticket import TicketPriority, TicketStatus
 from app.models.user import UserRole
 from app.schemas.ticket import TicketClose, TicketCreate, TicketList, TicketRead, TicketUpdate
 from app.services import authorization_service, ticket_service
@@ -14,6 +14,8 @@ from app.services.embedding_service import EmbeddingService, get_embedding_servi
 router = APIRouter(prefix="/tickets", tags=["tickets"])
 DbSession = Annotated[Session, Depends(get_db)]
 StatusFilter = Annotated[TicketStatus | None, Query(alias="status")]
+SearchFilter = Annotated[str | None, Query(min_length=1, max_length=200, pattern=r"\S")]
+PriorityFilter = Annotated[TicketPriority | None, Query()]
 Limit = Annotated[int, Query(ge=1, le=100)]
 Offset = Annotated[int, Query(ge=0)]
 EmbeddingServiceDependency = Annotated[EmbeddingService, Depends(get_embedding_service)]
@@ -32,20 +34,25 @@ def list_tickets(
     ticket_status: StatusFilter = None,
     limit: Limit = 20,
     offset: Offset = 0,
+    q: SearchFilter = None,
+    priority: PriorityFilter = None,
 ) -> TicketList:
     requester_id = user.id if user.role is UserRole.USER else None
-    items, total = ticket_service.list_tickets(
+    items, total, status_counts = ticket_service.list_tickets(
         db,
         status=ticket_status,
         requester_id=requester_id,
         limit=limit,
         offset=offset,
+        q=q,
+        priority=priority,
     )
     return TicketList(
         items=[TicketRead.model_validate(item) for item in items],
         total=total,
         limit=limit,
         offset=offset,
+        status_counts=status_counts,
     )
 
 

@@ -1,12 +1,23 @@
 import { computed, reactive, readonly } from 'vue'
 
-import { APIError } from '@/api/client'
+import { advanceSessionEpoch, setUnauthorizedHandler } from '@/api/client'
 import * as authApi from '@/api/auth'
 import type { AuthUser, UserRole } from '@/api/types'
+import { clearDrafts } from '@/stores/drafts'
 
 const state = reactive({
   user: null as AuthUser | null,
   initialized: false,
+  expired: false,
+})
+let draftOwnerId: number | null = null
+let initialization: Promise<AuthUser | null> | null = null
+
+setUnauthorizedHandler(() => {
+  if (!state.user) return
+  state.user = null
+  state.expired = true
+  advanceSessionEpoch()
 })
 
 const isStaff = computed(
@@ -15,23 +26,30 @@ const isStaff = computed(
 
 export async function ensureSession(): Promise<AuthUser | null> {
   if (state.initialized) return state.user
-  try {
-    state.user = await authApi.getCurrentUser()
-  } catch (error) {
-    if (error instanceof APIError && error.status !== 401) {
-      // Keep the sign-in surface available while the API is temporarily unavailable.
+  if (initialization) return initialization
+  initialization = (async () => {
+    try {
+      state.user = await authApi.getCurrentUser()
+      draftOwnerId = state.user.id
+    } catch {
+      state.user = null
+    } finally {
+      state.initialized = true
+      initialization = null
     }
-    state.user = null
-  } finally {
-    state.initialized = true
-  }
-  return state.user
+    return state.user
+  })()
+  return initialization
 }
 
 export async function signIn(username: string, password: string): Promise<AuthUser> {
   const user = await authApi.login({ username, password })
+  if (draftOwnerId !== null && draftOwnerId !== user.id) clearDrafts()
+  draftOwnerId = user.id
+  advanceSessionEpoch()
   state.user = user
   state.initialized = true
+  state.expired = false
   return user
 }
 
@@ -41,6 +59,10 @@ export async function signOut(): Promise<void> {
   } finally {
     state.user = null
     state.initialized = true
+    state.expired = false
+    draftOwnerId = null
+    advanceSessionEpoch()
+    clearDrafts()
   }
 }
 

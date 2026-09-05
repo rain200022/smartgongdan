@@ -1,6 +1,7 @@
 import { createRouter, createWebHistory } from 'vue-router'
+import { watch } from 'vue'
 
-import { ensureSession, homeForRole } from '@/stores/session'
+import { ensureSession, homeForRole, session } from '@/stores/session'
 
 const router = createRouter({
   history: createWebHistory(),
@@ -30,6 +31,12 @@ const router = createRouter({
           name: 'portal-my-tickets',
           component: () => import('@/views/portal/MyTicketsView.vue'),
           meta: { title: '我的工单', roles: ['USER'] },
+        },
+        {
+          path: 'tickets/:ticketId',
+          name: 'portal-ticket-detail',
+          component: () => import('@/views/portal/TicketDetailView.vue'),
+          meta: { title: '工单详情', roles: ['USER'] },
         },
       ],
     },
@@ -86,6 +93,13 @@ router.beforeEach(async (to) => {
 
 router.afterEach((to) => {
   document.title = `${String(to.meta.title ?? '智能工单')} · 智单`
+})
+
+watch(() => session.state.expired, (expired) => {
+  const current = router.currentRoute.value
+  if (expired && !current.meta.public) {
+    void router.replace({ name: 'login', query: { expired: '1', redirect: current.fullPath } })
+  }
 })
 
 export default router

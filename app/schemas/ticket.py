@@ -66,8 +66,16 @@ class TicketRead(APIModel):
     resolved_at: datetime | None
 
 
+class TicketStatusCounts(APIModel):
+    all: int = Field(ge=0)
+    open: int = Field(ge=0)
+    in_progress: int = Field(ge=0)
+    closed: int = Field(ge=0)
+
+
 class TicketList(APIModel):
     items: list[TicketRead]
     total: int
     limit: int
     offset: int
+    status_counts: TicketStatusCounts

@@ -44,6 +44,7 @@ export interface TicketList {
   total: number
   limit: number
   offset: number
+  status_counts: Record<TicketStatus | 'all', number>
 }
 
 export interface APIErrorBody {

@@ -71,7 +71,7 @@ npm run dev
 | `PATCH` | `/users/{id}/status` | 管理员启用或停用账号 |
 | `POST` | `/users/{id}/password/reset` | 管理员重置账号密码并撤销其会话 |
 | `POST` | `/tickets` | 创建工单 |
-| `GET` | `/tickets` | 分页查询，可用 `status` 筛选 |
+| `GET` | `/tickets` | 服务端分页，支持 `status`、`q`、`priority`，返回筛选后总数与状态数量 |
 | `GET` | `/tickets/{id}` | 查询详情 |
 | `PATCH` | `/tickets/{id}` | 工程师修改分类、优先级或处理状态 |
 | `POST` | `/tickets/{id}/close` | 填写最终判断并关闭工单 |
@@ -116,10 +116,31 @@ uv run ruff format --check .
 uv run ruff check .
 uv run mypy
 uv run pytest --cov=app --cov-fail-under=90
+uv pip check
 uv run alembic check
 Set-Location frontend
 npm run quality
 ```
+
+浏览器回归测试使用独立的临时数据库与测试账号，不读写开发数据库。首次执行时安装浏览器：
+
+```powershell
+Set-Location frontend
+npx playwright install chromium
+npm run test:e2e
+```
+
+测试会自行启动 `15173` 前端和 `18000` 测试 API，结束后关闭。请保持这两个端口空闲。GitHub Actions 分别运行后端、前端质量检查和浏览器流程回归；失败时保留截图与 trace。
+
+## 试用流程与草稿保护
+
+- 用户提交后可进入 `/portal/tickets/{id}` 查看完整问题、当前状态和最终解决方案；后端校验工单归属。
+- 用户和员工列表均使用服务端分页，可搜索标题或 `INC-0001` 编号。员工还可筛选优先级；优先采用人工最终优先级，再回退到规则优先级。
+- `status_counts` 根据当前用户权限、搜索和优先级统计，不受当前状态按钮或分页影响；`total` 则是当前全部筛选条件下的总数。
+- 列表筛选与页码保存在 URL 中，从详情返回可回到原列表位置。
+- 重新分析保留工程师手工调整的最终分类、优先级和解决方案。关闭前显示确认提示；页面内进行中的写操作互斥，过期请求不能覆盖另一张工单。
+- 工单填写与处理草稿仅存于当前标签页内存，按账号和工单隔离；会话过期后同一账号重新登录可恢复。主动退出或切换账号会清除草稿，刷新／关闭标签页也会丢失；离开时会提示。
+- 重新登录后不会自动重放创建、分析或关闭请求，需要用户确认后再次提交。
 
 完整工程边界和不变量见 [项目契约](docs/PROJECT_CONTRACT.md)，参与开发前请阅读 [开发约定](CONTRIBUTING.md)。当前状态记录在 [开发交接包](docs/HANDOFF.md)，剩余风险按 [稳定化待办](docs/STABILIZATION_BACKLOG.md) 管理。VS Code 可直接运行 `quality: all` 任务执行前后端同一组门禁。
 

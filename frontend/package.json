@@ -9,9 +9,11 @@
   "scripts": {
     "dev": "vite",
     "build": "vue-tsc --noEmit -p tsconfig.app.json && vite build",
-    "typecheck": "vue-tsc --noEmit -p tsconfig.app.json",
+    "typecheck": "vue-tsc --noEmit -p tsconfig.app.json && tsc --noEmit -p tsconfig.node.json",
     "lint": "eslint . --max-warnings 0",
-    "quality": "npm run lint && npm run typecheck && npm run build"
+    "quality": "npm run lint && npm run typecheck && npm run build",
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui"
   },
   "dependencies": {
     "@ant-design/icons-vue": "7.0.1",
@@ -20,6 +22,7 @@
     "vue-router": "5.2.0"
   },
   "devDependencies": {
+    "@playwright/test": "1.63.0",
     "@eslint/js": "10.0.1",
     "@types/node": "26.2.0",
     "@vitejs/plugin-vue": "6.0.8",

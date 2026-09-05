@@ -10,6 +10,7 @@ import type {
   TicketClose,
   TicketCreate,
   TicketList,
+  TicketPriority,
   TicketStatus,
   TicketSolutionReviewCreate,
 } from './types'
@@ -26,12 +27,16 @@ export function createTicket(payload: TicketCreate): Promise<Ticket> {
 }
 
 export function listTickets(params: {
-  status?: string
+  status?: TicketStatus
+  q?: string
+  priority?: TicketPriority
   limit?: number
   offset?: number
 } = {}): Promise<TicketList> {
   const search = new URLSearchParams()
   if (params.status) search.set('status', params.status)
+  if (params.q) search.set('q', params.q)
+  if (params.priority) search.set('priority', params.priority)
   search.set('limit', String(params.limit ?? 20))
   search.set('offset', String(params.offset ?? 0))
   return request(`/tickets?${search.toString()}`)

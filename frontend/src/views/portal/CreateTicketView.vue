@@ -1,8 +1,11 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 
 import { createTicket, getClassificationTree } from '@/api/tickets'
 import type { ClassificationTree, Ticket } from '@/api/types'
+import { useUnsavedChanges } from '@/composables/useUnsavedChanges'
+import { readDraft, removeDraft, saveDraft } from '@/stores/drafts'
+import { session } from '@/stores/session'
 
 interface TicketForm {
   title: string
@@ -29,6 +32,17 @@ const form = reactive<TicketForm>({
   errorMessage: '',
   attemptedActions: '',
 })
+const draftOwner = session.state.user!.id
+const draftKey = 'create-ticket'
+const savedDraft = readDraft<TicketForm>(draftOwner, draftKey)
+if (savedDraft) Object.assign(form, savedDraft)
+const dirty = computed(() => !createdTicket.value && Object.values(form).some(Boolean))
+useUnsavedChanges(dirty, submitting)
+watch(form, () => {
+  if (session.state.user?.id !== draftOwner && !session.state.expired) return
+  if (dirty.value) saveDraft(draftOwner, draftKey, form)
+  else removeDraft(draftOwner, draftKey)
+}, { deep: true, flush: 'sync' })
 
 const categories = computed(() => Object.keys(classificationTree.value))
 const subcategories = computed(() =>
@@ -56,7 +70,16 @@ function buildDescription(): string {
 }
 
 async function submit(): Promise<void> {
+  if (submitting.value) return
   submitError.value = ''
+  if (!form.title.trim() || !form.description.trim()) {
+    submitError.value = '请输入有效的问题标题和详情'
+    return
+  }
+  if (buildDescription().length > 10000) {
+    submitError.value = '问题详情与补充上下文合计不能超过 10000 个字符，请精简后提交'
+    return
+  }
   submitting.value = true
   try {
     const userCategory =
@@ -66,6 +89,7 @@ async function submit(): Promise<void> {
       description: buildDescription(),
       ...(userCategory ? { user_category: userCategory } : {}),
     })
+    removeDraft(draftOwner, draftKey)
   } catch (error) {
     submitError.value = error instanceof Error ? error.message : '工单提交失败，请稍后重试'
   } finally {
@@ -94,8 +118,13 @@ function createAnother(): void {
       <a-result status="success" title="工单已提交" sub-title="我们已经记录你的问题，工程师会尽快处理。">
         <template #extra>
           <div class="success-ticket">工单编号：INC-{{ String(createdTicket.id).padStart(4, '0') }}</div>
-          <a-button type="primary" @click="createAnother">继续提交工单</a-button>
-          <router-link to="/portal/tickets"><a-button>查看我的工单</a-button></router-link>
+          <router-link v-slot="{ href, navigate }" :to="`/portal/tickets/${createdTicket.id}`" custom>
+            <a-button type="primary" :href="href" @click="navigate">查看工单详情</a-button>
+          </router-link>
+          <router-link v-slot="{ href, navigate }" to="/portal/tickets" custom>
+            <a-button :href="href" @click="navigate">查看我的工单</a-button>
+          </router-link>
+          <a-button @click="createAnother">继续提交工单</a-button>
         </template>
       </a-result>
     </template>
@@ -123,7 +152,7 @@ function createAnother(): void {
       />
 
       <div class="form-panel">
-        <a-form ref="formRef" :model="form" layout="vertical" @finish="submit">
+        <a-form ref="formRef" :model="form" :disabled="submitting" layout="vertical" @finish="submit">
           <section class="form-section" aria-labelledby="problem-section-title">
             <div class="section-heading">
               <span class="section-number">1</span>
@@ -141,7 +170,7 @@ function createAnother(): void {
                 { max: 200, message: '标题不能超过 200 个字符' },
               ]"
             >
-              <a-input v-model:value="form.title" placeholder="例如：VPN 提示认证服务器不可用" />
+              <a-input v-model:value="form.title" :maxlength="200" placeholder="例如：VPN 提示认证服务器不可用" />
             </a-form-item>
 
             <a-form-item

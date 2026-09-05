@@ -9,8 +9,8 @@ import {
   RobotOutlined,
   UserOutlined,
 } from '@ant-design/icons-vue'
-import { message } from 'ant-design-vue'
-import { computed, reactive, ref, watch } from 'vue'
+import { message, Modal } from 'ant-design-vue'
+import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 
 import { APIError } from '@/api/client'
@@ -39,6 +39,24 @@ import type {
   TicketPriority,
 } from '@/api/types'
 import StatusTag from '@/components/StatusTag.vue'
+import { useUnsavedChanges } from '@/composables/useUnsavedChanges'
+import { readDraft, removeDraft, saveDraft } from '@/stores/drafts'
+import { session } from '@/stores/session'
+
+interface HandlingForm {
+  category: string | undefined
+  subcategory: string | undefined
+  priority: TicketPriority
+  resolution: string
+}
+
+interface WorkbenchDraft {
+  handling: HandlingForm
+  solutionId: number | null
+  solutionDraft: string
+  rejectionReason: string
+  rejectionCategory: RejectionCategory | undefined
+}
 
 const route = useRoute()
 const loading = ref(true)
@@ -56,7 +74,7 @@ const searchModel = ref('')
 const solutionDraft = ref('')
 const rejectionReason = ref('')
 const rejectionCategory = ref<RejectionCategory | undefined>()
-const handling = reactive({
+const handling = reactive<HandlingForm>({
   category: undefined as string | undefined,
   subcategory: undefined as string | undefined,
   priority: 'P3' as TicketPriority,
@@ -69,6 +87,29 @@ const subcategories = computed(() =>
   handling.category ? (classificationTree.value[handling.category] ?? []) : [],
 )
 const isClosed = computed(() => ticket.value?.status === 'closed')
+const closeConfirming = ref(false)
+const busy = computed(() => Boolean(actionLoading.value) || closeConfirming.value)
+const draftOwner = session.state.user!.id
+const draftKey = computed(() => `workbench:${ticketId.value}`)
+const baseline = ref('')
+const draftReady = ref(false)
+let loadVersion = 0
+let similarVersion = 0
+const dirty = computed(() => draftReady.value && !isClosed.value && JSON.stringify(draftSnapshot()) !== baseline.value)
+const backPath = computed(() => {
+  const path = route.query.returnTo
+  return typeof path === 'string' && /^\/console\/tickets(?:\?|$)/.test(path) ? path : '/console/tickets'
+})
+useUnsavedChanges(dirty, busy)
+onBeforeUnmount(() => {
+  loadVersion += 1
+  similarVersion += 1
+})
+watch([handling, solutionDraft, rejectionReason, rejectionCategory, baseline], () => {
+  if (!draftReady.value || (session.state.user?.id !== draftOwner && !session.state.expired)) return
+  if (dirty.value) saveDraft(draftOwner, draftKey.value, draftSnapshot())
+  else removeDraft(draftOwner, draftKey.value)
+}, { deep: true, flush: 'sync' })
 const solutionIsStale = computed(
   () =>
     Boolean(solution.value && analysis.value) &&
@@ -82,6 +123,31 @@ watch(
   },
   { immediate: true },
 )
+
+function draftSnapshot(): WorkbenchDraft {
+  return {
+    handling: { ...handling },
+    solutionId: solution.value?.id ?? null,
+    solutionDraft: solutionDraft.value,
+    rejectionReason: rejectionReason.value,
+    rejectionCategory: rejectionCategory.value,
+  }
+}
+
+function initializeDraft(): void {
+  baseline.value = JSON.stringify(draftSnapshot())
+  if (isClosed.value) removeDraft(draftOwner, draftKey.value)
+  const saved = !isClosed.value ? readDraft<WorkbenchDraft>(draftOwner, draftKey.value) : null
+  if (saved) {
+    Object.assign(handling, saved.handling)
+    if (saved.solutionId === (solution.value?.id ?? null)) {
+      solutionDraft.value = saved.solutionDraft
+      rejectionReason.value = saved.rejectionReason
+      rejectionCategory.value = saved.rejectionCategory
+    }
+  }
+  draftReady.value = true
+}
 
 async function optionalLatestAnalysis(id: number): Promise<TicketAIAnalysis | null> {
   try {
@@ -122,19 +188,37 @@ function validPair(value: string | null | undefined): [string, string] | null {
   return [category, subcategory]
 }
 
-function setHandlingDefaults(): void {
+function setHandlingDefaults(preserveEdits = false): void {
   if (!ticket.value) return
   const pair =
     validPair(ticket.value.final_category) ??
     (analysis.value ? validPair(`${analysis.value.category}/${analysis.value.subcategory}`) : null) ??
     validPair(ticket.value.user_category)
-  handling.category = pair?.[0]
-  handling.subcategory = pair?.[1]
-  handling.priority = ticket.value.final_priority ?? ticket.value.ai_priority ?? 'P3'
-  handling.resolution = ticket.value.resolution ?? ''
+  const defaults: HandlingForm = {
+    category: pair?.[0],
+    subcategory: pair?.[1],
+    priority: ticket.value.final_priority ?? ticket.value.ai_priority ?? 'P3',
+    resolution: ticket.value.resolution ?? '',
+  }
+  const previous = baseline.value ? (JSON.parse(baseline.value) as WorkbenchDraft) : null
+  if (!preserveEdits || !previous) {
+    Object.assign(handling, defaults)
+  } else {
+    if (handling.category === previous.handling.category && handling.subcategory === previous.handling.subcategory) {
+      handling.category = defaults.category
+      handling.subcategory = defaults.subcategory
+    }
+    if (handling.priority === previous.handling.priority) handling.priority = defaults.priority
+    if (handling.resolution === previous.handling.resolution) handling.resolution = defaults.resolution
+    baseline.value = JSON.stringify({ ...previous, handling: defaults })
+  }
 }
 
 async function loadWorkbench(id: number): Promise<void> {
+  const version = ++loadVersion
+  similarVersion += 1
+  draftReady.value = false
+  actionLoading.value = ''
   loading.value = true
   errorMessage.value = ''
   ticket.value = null
@@ -156,6 +240,7 @@ async function loadWorkbench(id: number): Promise<void> {
       optionalLatestSolution(id),
       getJudgments(id),
     ])
+    if (version !== loadVersion) return
     ticket.value = ticketData
     classificationTree.value = tree
     analysis.value = analysisData
@@ -163,25 +248,30 @@ async function loadWorkbench(id: number): Promise<void> {
     judgments.value = judgmentData
     setHandlingDefaults()
     setSolutionDraft()
+    initializeDraft()
     void loadSimilarResults(id)
   } catch (error) {
+    if (version !== loadVersion) return
     errorMessage.value = error instanceof Error ? error.message : '工单加载失败'
   } finally {
-    loading.value = false
+    if (version === loadVersion) loading.value = false
   }
 }
 
 async function loadSimilarResults(id = ticketId.value): Promise<void> {
+  const version = ++similarVersion
   similarLoading.value = true
   similarError.value = ''
   try {
     const result = await getSimilarResults(id)
+    if (version !== similarVersion || id !== ticketId.value) return
     similarResults.value = result.items
     searchModel.value = result.query_model
   } catch (error) {
+    if (version !== similarVersion || id !== ticketId.value) return
     similarError.value = error instanceof Error ? error.message : '相似内容检索失败'
   } finally {
-    similarLoading.value = false
+    if (version === similarVersion) similarLoading.value = false
   }
 }
 
@@ -189,38 +279,45 @@ function resetSubcategory(): void {
   handling.subcategory = undefined
 }
 
-async function runAction(name: string, action: () => Promise<void>): Promise<void> {
+async function runAction(name: string, action: (id: number, isCurrent: () => boolean) => Promise<void>): Promise<void> {
+  if (busy.value || isClosed.value || loading.value) return
+  const id = ticketId.value
+  const version = loadVersion
+  const isCurrent = (): boolean => version === loadVersion && session.state.user?.id === draftOwner
   actionLoading.value = name
   try {
-    await action()
+    await action(id, isCurrent)
   } catch (error) {
-    message.error(error instanceof Error ? error.message : '操作失败，请重试')
+    if (isCurrent()) message.error(error instanceof Error ? error.message : '操作失败，请重试')
   } finally {
-    actionLoading.value = ''
+    if (version === loadVersion) actionLoading.value = ''
   }
 }
 
 async function startProcessing(): Promise<void> {
-  await runAction('start', async () => {
-    ticket.value = await updateTicketStatus(ticketId.value, 'in_progress')
+  await runAction('start', async (id, isCurrent) => {
+    const result = await updateTicketStatus(id, 'in_progress')
+    if (!isCurrent()) return
+    ticket.value = result
     message.success('工单已进入处理状态')
   })
 }
 
 async function analyze(): Promise<void> {
-  await runAction('analyze', async () => {
-    analysis.value = await analyzeTicket(ticketId.value)
-    solution.value = null
-    setSolutionDraft()
+  await runAction('analyze', async (id, isCurrent) => {
+    const analysisData = await analyzeTicket(id)
+    if (!isCurrent()) return
+    analysis.value = analysisData
     const [ticketData, judgmentData] = await Promise.all([
-      getTicket(ticketId.value),
-      getJudgments(ticketId.value),
+      getTicket(id),
+      getJudgments(id),
     ])
+    if (!isCurrent()) return
     ticket.value = ticketData
     judgments.value = judgmentData
-    setHandlingDefaults()
-    await loadSimilarResults()
-    message.success('AI 分析和规则优先级计算已完成')
+    setHandlingDefaults(true)
+    await loadSimilarResults(id)
+    if (isCurrent()) message.success('AI 分析已更新，人工填写的内容已保留')
   })
 }
 
@@ -229,8 +326,10 @@ async function createSolution(): Promise<void> {
     message.warning('请先完成 AI 工单分析')
     return
   }
-  await runAction('solution', async () => {
-    solution.value = await generateSolution(ticketId.value)
+  await runAction('solution', async (id, isCurrent) => {
+    const result = await generateSolution(id)
+    if (!isCurrent()) return
+    solution.value = result
     setSolutionDraft()
     message.success(
       solution.value.need_human
@@ -245,12 +344,15 @@ async function adoptSolution(): Promise<void> {
     message.warning('请先填写可执行的解决方案')
     return
   }
-  await runAction('adopt-solution', async () => {
-    solution.value = await reviewSolution(ticketId.value, solution.value!.id, {
+  await runAction('adopt-solution', async (id, isCurrent) => {
+    const draft = solutionDraft.value.trim()
+    const result = await reviewSolution(id, solution.value!.id, {
       decision: 'ADOPTED',
-      engineer_solution: solutionDraft.value.trim(),
+      engineer_solution: draft,
     })
-    handling.resolution = solutionDraft.value.trim()
+    if (!isCurrent()) return
+    solution.value = result
+    handling.resolution = draft
     message.success('已采纳并填入最终解决方案，确认执行结果后可关闭工单')
   })
 }
@@ -265,12 +367,14 @@ async function rejectSolution(): Promise<void> {
     message.warning('请简要填写拒绝原因，便于后续评估')
     return
   }
-  await runAction('reject-solution', async () => {
-    solution.value = await reviewSolution(ticketId.value, solution.value!.id, {
+  await runAction('reject-solution', async (id, isCurrent) => {
+    const result = await reviewSolution(id, solution.value!.id, {
       decision: 'REJECTED',
       rejection_category: rejectionCategory.value,
       rejection_reason: rejectionReason.value.trim(),
     })
+    if (!isCurrent()) return
+    solution.value = result
     message.success('已记录拒绝原因，本条建议不会作为最终方案使用')
   })
 }
@@ -280,14 +384,17 @@ async function confirm(): Promise<void> {
     message.warning('请先选择完整的最终分类')
     return
   }
-  await runAction('confirm', async () => {
+  await runAction('confirm', async (id, isCurrent) => {
     const result = await confirmClassification(
-      ticketId.value,
+      id,
       handling.category as string,
       handling.subcategory as string,
     )
-    ticket.value = await getTicket(ticketId.value)
-    judgments.value = await getJudgments(ticketId.value)
+    if (!isCurrent()) return
+    const [ticketData, judgmentData] = await Promise.all([getTicket(id), getJudgments(id)])
+    if (!isCurrent()) return
+    ticket.value = ticketData
+    judgments.value = judgmentData
     if (result.evaluation?.agreement) {
       message.success('分类已确认，与 AI 判断一致')
     } else if (result.evaluation) {
@@ -299,6 +406,7 @@ async function confirm(): Promise<void> {
 }
 
 async function closeCurrentTicket(): Promise<void> {
+  if (busy.value || isClosed.value || loading.value) return
   if (!handling.category || !handling.subcategory) {
     message.warning('关闭前需要确认最终分类')
     return
@@ -307,12 +415,30 @@ async function closeCurrentTicket(): Promise<void> {
     message.warning('请填写最终解决方案')
     return
   }
-  await runAction('close', async () => {
-    ticket.value = await closeTicket(ticketId.value, {
+  const version = loadVersion
+  closeConfirming.value = true
+  const approved = await new Promise<boolean>((resolve) => {
+    Modal.confirm({
+      title: '确认关闭工单？',
+      content: `最终分类：${handling.category}/${handling.subcategory}，优先级：${handling.priority}。请确认问题已解决；关闭后记录只读。`,
+      okText: '确认关闭',
+      cancelText: '继续处理',
+      onOk: () => { resolve(true) },
+      onCancel: () => { resolve(false) },
+    })
+  })
+  closeConfirming.value = false
+  if (!approved || version !== loadVersion) return
+  await runAction('close', async (id, isCurrent) => {
+    const result = await closeTicket(id, {
       final_category: `${handling.category}/${handling.subcategory}`,
       final_priority: handling.priority,
       resolution: handling.resolution.trim(),
     })
+    removeDraft(draftOwner, `workbench:${id}`)
+    if (!isCurrent()) return
+    ticket.value = result
+    draftReady.value = false
     message.success('工单已关闭')
   })
 }
@@ -342,6 +468,7 @@ function judgeLabel(type: Judgment['judge_type']): string {
   </a-result>
 
   <article v-else-if="ticket" class="workbench">
+    <router-link :to="backPath">返回工单队列</router-link>
     <header class="ticket-heading">
       <div>
         <div class="ticket-kicker">
@@ -354,6 +481,7 @@ function judgeLabel(type: Judgment['judge_type']): string {
       </div>
       <a-button
         v-if="ticket.status === 'open'"
+        :disabled="busy"
         :loading="actionLoading === 'start'"
         @click="startProcessing"
       >
@@ -391,6 +519,7 @@ function judgeLabel(type: Judgment['judge_type']): string {
             <a-button
               v-if="!isClosed"
               size="small"
+              :disabled="busy"
               :loading="actionLoading === 'analyze'"
               @click="analyze"
             >
@@ -498,7 +627,7 @@ function judgeLabel(type: Judgment['judge_type']): string {
             <a-button
               v-if="!isClosed"
               size="small"
-              :disabled="!analysis"
+              :disabled="!analysis || busy"
               :loading="actionLoading === 'solution'"
               @click="createSolution"
             >
@@ -575,13 +704,13 @@ function judgeLabel(type: Judgment['judge_type']): string {
               <a-textarea
                 id="solution-draft"
                 v-model:value="solutionDraft"
-                :disabled="solutionIsStale"
+                :disabled="solutionIsStale || busy"
                 :rows="5"
                 placeholder="根据现场情况调整建议步骤"
               />
               <a-button
                 type="primary"
-                :disabled="solutionIsStale"
+                :disabled="solutionIsStale || busy"
                 :loading="actionLoading === 'adopt-solution'"
                 @click="adoptSolution"
               >
@@ -593,7 +722,7 @@ function judgeLabel(type: Judgment['judge_type']): string {
                 <div>
                   <a-select
                     v-model:value="rejectionCategory"
-                    :disabled="solutionIsStale"
+                    :disabled="solutionIsStale || busy"
                     placeholder="原因类型"
                     :options="[
                       { value: 'EVIDENCE_MISMATCH', label: '证据不匹配' },
@@ -605,13 +734,13 @@ function judgeLabel(type: Judgment['judge_type']): string {
                   <a-input
                     id="rejection-reason"
                     v-model:value="rejectionReason"
-                    :disabled="solutionIsStale"
+                    :disabled="solutionIsStale || busy"
                     placeholder="例如：现场症状与引用案例不一致"
                     @press-enter="rejectSolution"
                   />
                   <a-button
                     danger
-                    :disabled="solutionIsStale"
+                    :disabled="solutionIsStale || busy"
                     :loading="actionLoading === 'reject-solution'"
                     @click="rejectSolution"
                   >
@@ -711,21 +840,24 @@ function judgeLabel(type: Judgment['judge_type']): string {
           <CheckCircleOutlined v-if="isClosed" class="closed-icon" />
         </div>
 
-        <a-form layout="vertical">
+        <p v-if="dirty" class="model-note" role="status">有未提交的修改，草稿仅保留在本标签页。关闭工单后才会保存最终方案。</p>
+        <a-form :model="handling" layout="vertical">
           <div class="field-grid">
-            <a-form-item label="最终分类" required>
+            <a-form-item label="最终分类" name="category" required>
               <a-select
                 v-model:value="handling.category"
-                :disabled="isClosed"
+                aria-label="最终分类"
+                :disabled="isClosed || busy"
                 placeholder="选择分类"
                 :options="categories.map((value) => ({ value, label: value }))"
                 @change="resetSubcategory"
               />
             </a-form-item>
-            <a-form-item label="具体类型" required>
+            <a-form-item label="具体类型" name="subcategory" required>
               <a-select
                 v-model:value="handling.subcategory"
-                :disabled="isClosed || !handling.category"
+                aria-label="具体类型"
+                :disabled="isClosed || busy || !handling.category"
                 placeholder="选择类型"
                 :options="subcategories.map((value) => ({ value, label: value }))"
               />
@@ -736,6 +868,7 @@ function judgeLabel(type: Judgment['judge_type']): string {
             v-if="!isClosed"
             block
             class="confirm-button"
+            :disabled="busy"
             :loading="actionLoading === 'confirm'"
             @click="confirm"
           >
@@ -744,8 +877,8 @@ function judgeLabel(type: Judgment['judge_type']): string {
 
           <a-divider />
 
-          <a-form-item label="最终优先级" required>
-            <a-radio-group v-model:value="handling.priority" :disabled="isClosed" button-style="solid">
+          <a-form-item label="最终优先级" name="priority" required>
+            <a-radio-group v-model:value="handling.priority" :disabled="isClosed || busy" button-style="solid">
               <a-radio-button value="P1">P1</a-radio-button>
               <a-radio-button value="P2">P2</a-radio-button>
               <a-radio-button value="P3">P3</a-radio-button>
@@ -753,10 +886,12 @@ function judgeLabel(type: Judgment['judge_type']): string {
             </a-radio-group>
           </a-form-item>
 
-          <a-form-item label="最终解决方案" required>
+          <a-form-item label="最终解决方案" name="resolution" required>
             <a-textarea
+              id="final-resolution"
+              aria-label="最终解决方案"
               v-model:value="handling.resolution"
-              :disabled="isClosed"
+              :disabled="isClosed || busy"
               :rows="7"
               placeholder="记录根因、执行步骤和验证结果，便于后续复用。"
             />
@@ -766,6 +901,7 @@ function judgeLabel(type: Judgment['judge_type']): string {
             v-if="!isClosed"
             type="primary"
             block
+            :disabled="busy"
             :loading="actionLoading === 'close'"
             @click="closeCurrentTicket"
           >

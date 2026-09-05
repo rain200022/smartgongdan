@@ -18,6 +18,7 @@ function safeRedirect(): string | null {
 }
 
 async function submit(): Promise<void> {
+  if (submitting.value) return
   submitting.value = true
   errorMessage.value = ''
   try {
@@ -40,6 +41,14 @@ async function submit(): Promise<void> {
         <h1 id="login-title">登录智能工单系统</h1>
         <span>使用管理员为你分配的内部账号</span>
       </header>
+
+      <a-alert
+        v-if="route.query.expired === '1'"
+        class="login-error"
+        type="warning"
+        show-icon
+        message="登录已过期，请重新登录。同一账号的未提交草稿会在本标签页恢复。"
+      />
 
       <a-alert
         v-if="errorMessage"
@@ -75,7 +84,9 @@ async function submit(): Promise<void> {
             <template #prefix><LockOutlined /></template>
           </a-input-password>
         </a-form-item>
-        <a-button type="primary" html-type="submit" block :loading="submitting">登录</a-button>
+        <a-button type="primary" html-type="submit" aria-label="登录" block :loading="submitting">
+          登录
+        </a-button>
       </a-form>
 
       <footer class="login-footer">

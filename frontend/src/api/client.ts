@@ -1,6 +1,16 @@
 import type { APIErrorBody } from './types'
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? '/api'
+let sessionEpoch = 0
+let unauthorizedHandler: (() => void) | undefined
+
+export function setUnauthorizedHandler(handler: () => void): void {
+  unauthorizedHandler = handler
+}
+
+export function advanceSessionEpoch(): void {
+  sessionEpoch += 1
+}
 
 export class APIError extends Error {
   constructor(
@@ -19,6 +29,7 @@ function errorMessage(body: APIErrorBody, fallback: string): string {
 }
 
 export async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
+  const requestEpoch = sessionEpoch
   const response = await fetch(`${API_BASE_URL}${path}`, {
     ...options,
     credentials: 'include',
@@ -30,6 +41,9 @@ export async function request<T>(path: string, options: RequestInit = {}): Promi
 
   if (!response.ok) {
     const body = (await response.json().catch(() => ({}))) as APIErrorBody
+    if (response.status === 401 && path !== '/auth/login' && requestEpoch === sessionEpoch) {
+      unauthorizedHandler?.()
+    }
     throw new APIError(errorMessage(body, `请求失败（${response.status}）`), response.status)
   }
 

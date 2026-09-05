@@ -1,4 +1,6 @@
-from sqlalchemy import func, select
+import re
+
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 from sqlalchemy.sql.elements import ColumnElement
 
@@ -6,9 +8,9 @@ from app.core.classification import split_classification
 from app.core.exceptions import InvalidTicketTransitionError, TicketNotFoundError
 from app.core.time import utc_now
 from app.models.ai_analysis import JudgeType, TicketJudgment
-from app.models.ticket import Ticket, TicketStatus
+from app.models.ticket import Ticket, TicketPriority, TicketStatus
 from app.schemas.evaluation import ClassificationConfirmation
-from app.schemas.ticket import TicketClose, TicketCreate, TicketUpdate
+from app.schemas.ticket import TicketClose, TicketCreate, TicketStatusCounts, TicketUpdate
 from app.services import evaluation_service
 from app.services.embedding_service import EmbeddingService
 
@@ -39,13 +41,40 @@ def list_tickets(
     requester_id: int | None,
     limit: int,
     offset: int,
-) -> tuple[list[Ticket], int]:
+    q: str | None = None,
+    priority: TicketPriority | None = None,
+) -> tuple[list[Ticket], int, TicketStatusCounts]:
     filters: list[ColumnElement[bool]] = [Ticket.external_reference.is_(None)]
-    if status:
-        filters.append(Ticket.status == status)
     if requester_id is not None:
         filters.append(Ticket.requester_id == requester_id)
-    total = db.scalar(select(func.count(Ticket.id)).where(*filters)) or 0
+    if priority is not None:
+        filters.append(func.coalesce(Ticket.final_priority, Ticket.ai_priority) == priority)
+    if q:
+        search = q.strip()
+        title_match = Ticket.title.icontains(search, autoescape=True)
+        number = re.fullmatch(r"(?:INC-)?([0-9]+)", search, flags=re.IGNORECASE)
+        # PostgreSQL ticket IDs are signed 32-bit integers; longer numbers remain title searches.
+        ticket_id = int(number.group(1)) if number is not None else None
+        if ticket_id is not None and 0 < ticket_id <= 2_147_483_647:
+            filters.append(or_(title_match, Ticket.id == ticket_id))
+        else:
+            filters.append(title_match)
+    counts = dict(
+        db.execute(
+            select(Ticket.status, func.count(Ticket.id)).where(*filters).group_by(Ticket.status)
+        )
+        .tuples()
+        .all()
+    )
+    status_counts = TicketStatusCounts(
+        all=sum(counts.values()),
+        open=counts.get(TicketStatus.OPEN, 0),
+        in_progress=counts.get(TicketStatus.IN_PROGRESS, 0),
+        closed=counts.get(TicketStatus.CLOSED, 0),
+    )
+    total = counts.get(status, 0) if status else status_counts.all
+    if status:
+        filters.append(Ticket.status == status)
     statement = (
         select(Ticket)
         .where(*filters)
@@ -53,7 +82,7 @@ def list_tickets(
         .limit(limit)
         .offset(offset)
     )
-    return list(db.scalars(statement)), total
+    return list(db.scalars(statement)), total, status_counts
 
 
 def get_ticket(db: Session, ticket_id: int) -> Ticket:

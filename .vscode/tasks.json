@@ -67,6 +67,13 @@
       "problemMatcher": []
     },
     {
+      "label": "frontend: browser tests",
+      "type": "shell",
+      "command": "npm run test:e2e",
+      "options": {"cwd": "${workspaceFolder}/frontend"},
+      "problemMatcher": []
+    },
+    {
       "label": "app: dev",
       "dependsOrder": "parallel",
       "dependsOn": ["api: dev", "frontend: dev"],

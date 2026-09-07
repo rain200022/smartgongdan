@@ -2,7 +2,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends
 
-from app.api.dependencies import DbSession, StaffUser
+from app.api.dependencies import DbSession, StaffUser, TicketVersion
 from app.schemas.solution import TicketAISolutionRead, TicketSolutionReviewCreate
 from app.services import solution_service
 from app.services.ai_service import AIService, get_ai_service
@@ -19,13 +19,16 @@ def generate_solution(
     db: DbSession,
     ai_service: AIServiceDependency,
     embedding_service: EmbeddingServiceDependency,
-    _staff: StaffUser,
+    staff: StaffUser,
+    version: TicketVersion = None,
 ) -> TicketAISolutionRead:
     record = solution_service.generate_solution(
         db,
         ticket_id=ticket_id,
         ai_service=ai_service,
         embedding_service=embedding_service,
+        actor=staff,
+        expected_version=version,
     )
     return TicketAISolutionRead.model_validate(record)
 
@@ -50,6 +53,7 @@ def review_solution(
     payload: TicketSolutionReviewCreate,
     db: DbSession,
     staff: StaffUser,
+    version: TicketVersion = None,
 ) -> TicketAISolutionRead:
     record = solution_service.review_solution(
         db,
@@ -57,5 +61,6 @@ def review_solution(
         solution_id=solution_id,
         reviewer=staff,
         payload=payload,
+        expected_version=version,
     )
     return TicketAISolutionRead.model_validate(record)

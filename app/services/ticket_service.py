@@ -9,9 +9,11 @@ from app.core.exceptions import InvalidTicketTransitionError, TicketNotFoundErro
 from app.core.time import utc_now
 from app.models.ai_analysis import JudgeType, TicketJudgment
 from app.models.ticket import Ticket, TicketPriority, TicketStatus
+from app.models.user import User
 from app.schemas.evaluation import ClassificationConfirmation
 from app.schemas.ticket import TicketClose, TicketCreate, TicketStatusCounts, TicketUpdate
 from app.services import evaluation_service
+from app.services import ticket_mutation_service as mutations
 from app.services.embedding_service import EmbeddingService
 
 
@@ -92,7 +94,14 @@ def get_ticket(db: Session, ticket_id: int) -> Ticket:
     return ticket
 
 
-def update_ticket(db: Session, ticket_id: int, payload: TicketUpdate) -> Ticket:
+def update_ticket(
+    db: Session,
+    ticket_id: int,
+    payload: TicketUpdate,
+    *,
+    actor: User,
+    expected_version: int | None = None,
+) -> Ticket:
     ticket = get_ticket(db, ticket_id)
     ensure_ticket_editable(ticket)
 
@@ -102,6 +111,9 @@ def update_ticket(db: Session, ticket_id: int, payload: TicketUpdate) -> Ticket:
     if requested_status is TicketStatus.CLOSED:
         raise InvalidTicketTransitionError("Use the close endpoint to close a ticket")
 
+    mutations.stage_mutation(
+        db, ticket, actor=actor, action="updated", expected_version=expected_version
+    )
     for field, value in changes.items():
         setattr(ticket, field, value)
     if final_category is not None:
@@ -117,14 +129,19 @@ def close_ticket(
     payload: TicketClose,
     *,
     embedding_service: EmbeddingService,
+    actor: User,
+    expected_version: int | None = None,
 ) -> Ticket:
     ticket = get_ticket(db, ticket_id)
-    ensure_ticket_editable(ticket)
+    mutations.ensure_can_mutate(ticket, actor, expected_version)
 
     search_text = "\n".join(
         (ticket.title, ticket.description, payload.final_category, payload.resolution)
     )
     search_embedding = embedding_service.embed(search_text)
+    mutations.stage_mutation(
+        db, ticket, actor=actor, action="closed", expected_version=expected_version
+    )
     ensure_engineer_classification(db, ticket, payload.final_category)
     ticket.final_priority = payload.final_priority
     ticket.resolution = payload.resolution
@@ -132,6 +149,39 @@ def close_ticket(
     ticket.search_embedding_model = embedding_service.model_name
     ticket.status = TicketStatus.CLOSED
     ticket.resolved_at = utc_now()
+    db.commit()
+    db.refresh(ticket)
+    return ticket
+
+
+def claim_ticket(
+    db: Session, ticket_id: int, *, actor: User, expected_version: int | None = None
+) -> Ticket:
+    ticket = get_ticket(db, ticket_id)
+    mutations.ensure_can_mutate(ticket, actor, expected_version)
+    if ticket.assigned_engineer_id is not None:
+        raise InvalidTicketTransitionError("工单已认领，请先释放再重新认领")
+    mutations.stage_mutation(
+        db, ticket, actor=actor, action="claimed", expected_version=expected_version
+    )
+    ticket.assigned_engineer_id = actor.id
+    ticket.status = TicketStatus.IN_PROGRESS
+    db.commit()
+    db.refresh(ticket)
+    return ticket
+
+
+def release_ticket(
+    db: Session, ticket_id: int, *, actor: User, expected_version: int | None = None
+) -> Ticket:
+    ticket = get_ticket(db, ticket_id)
+    mutations.ensure_can_mutate(ticket, actor, expected_version)
+    if ticket.assigned_engineer_id is None:
+        raise InvalidTicketTransitionError("工单尚未认领，无需释放")
+    mutations.stage_mutation(
+        db, ticket, actor=actor, action="released", expected_version=expected_version
+    )
+    ticket.assigned_engineer_id = None
     db.commit()
     db.refresh(ticket)
     return ticket

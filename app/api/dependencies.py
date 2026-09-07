@@ -1,6 +1,6 @@
 from typing import Annotated
 
-from fastapi import Depends, Request
+from fastapi import Depends, Header, Request
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
@@ -10,6 +10,7 @@ from app.models.user import User, UserRole
 from app.services import auth_service
 
 DbSession = Annotated[Session, Depends(get_db)]
+TicketVersion = Annotated[int | None, Header(alias="X-Ticket-Version", ge=1)]
 
 
 def get_current_user(request: Request, db: DbSession) -> User:

@@ -3,7 +3,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
-from app.api.dependencies import StaffUser
+from app.api.dependencies import StaffUser, TicketVersion
 from app.db.session import get_db
 from app.schemas.ai_analysis import TicketAIAnalysisRead
 from app.services import ai_analysis_service, ticket_service
@@ -16,12 +16,18 @@ AIServiceDependency = Annotated[AIService, Depends(get_ai_service)]
 
 @router.post("/{ticket_id}/analyze", response_model=TicketAIAnalysisRead)
 def analyze_ticket(
-    ticket_id: int, db: DbSession, ai_service: AIServiceDependency, _staff: StaffUser
+    ticket_id: int,
+    db: DbSession,
+    ai_service: AIServiceDependency,
+    staff: StaffUser,
+    version: TicketVersion = None,
 ) -> TicketAIAnalysisRead:
     record = ai_analysis_service.analyze_ticket(
         db,
         ticket_id=ticket_id,
         ai_service=ai_service,
+        actor=staff,
+        expected_version=version,
     )
     return TicketAIAnalysisRead.model_validate(record)
 

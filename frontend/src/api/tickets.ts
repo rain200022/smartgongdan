@@ -15,6 +15,32 @@ import type {
   TicketSolutionReviewCreate,
 } from './types'
 
+export interface TicketEvent {
+  id: number
+  ticket_id: number
+  version: number
+  actor_id: number
+  actor_name: string
+  action: string
+  created_at: string
+}
+
+function versionHeaders(version: number): Record<string, string> {
+  return { 'X-Ticket-Version': String(version) }
+}
+
+export function getTicketEvents(ticketId: number, offset = 0): Promise<TicketEvent[]> {
+  return request(`/tickets/${ticketId}/events?limit=100&offset=${offset}`)
+}
+
+export function claimTicket(ticketId: number, version: number): Promise<Ticket> {
+  return request(`/tickets/${ticketId}/claim`, { method: 'POST', headers: versionHeaders(version) })
+}
+
+export function releaseTicket(ticketId: number, version: number): Promise<Ticket> {
+  return request(`/tickets/${ticketId}/release`, { method: 'POST', headers: versionHeaders(version) })
+}
+
 export function getClassificationTree(): Promise<ClassificationTree> {
   return request('/classification-tree')
 }
@@ -46,15 +72,16 @@ export function getTicket(ticketId: number): Promise<Ticket> {
   return request(`/tickets/${ticketId}`)
 }
 
-export function updateTicketStatus(ticketId: number, status: TicketStatus): Promise<Ticket> {
+export function updateTicketStatus(ticketId: number, status: TicketStatus, version: number): Promise<Ticket> {
   return request(`/tickets/${ticketId}`, {
     method: 'PATCH',
+    headers: versionHeaders(version),
     body: JSON.stringify({ status }),
   })
 }
 
-export function analyzeTicket(ticketId: number): Promise<TicketAIAnalysis> {
-  return request(`/tickets/${ticketId}/analyze`, { method: 'POST' })
+export function analyzeTicket(ticketId: number, version: number): Promise<TicketAIAnalysis> {
+  return request(`/tickets/${ticketId}/analyze`, { method: 'POST', headers: versionHeaders(version) })
 }
 
 export function getLatestAnalysis(ticketId: number): Promise<TicketAIAnalysis> {
@@ -65,8 +92,8 @@ export function getSimilarResults(ticketId: number, limit = 5): Promise<SimilarR
   return request(`/tickets/${ticketId}/similar?limit=${limit}`)
 }
 
-export function generateSolution(ticketId: number): Promise<TicketAISolution> {
-  return request(`/tickets/${ticketId}/solutions/generate`, { method: 'POST' })
+export function generateSolution(ticketId: number, version: number): Promise<TicketAISolution> {
+  return request(`/tickets/${ticketId}/solutions/generate`, { method: 'POST', headers: versionHeaders(version) })
 }
 
 export function getLatestSolution(ticketId: number): Promise<TicketAISolution> {
@@ -77,9 +104,11 @@ export function reviewSolution(
   ticketId: number,
   solutionId: number,
   payload: TicketSolutionReviewCreate,
+  version: number,
 ): Promise<TicketAISolution> {
   return request(`/tickets/${ticketId}/solutions/${solutionId}/review`, {
     method: 'POST',
+    headers: versionHeaders(version),
     body: JSON.stringify(payload),
   })
 }
@@ -92,16 +121,19 @@ export function confirmClassification(
   ticketId: number,
   category: string,
   subcategory: string,
+  version: number,
 ): Promise<ClassificationConfirmation> {
   return request(`/tickets/${ticketId}/classification/confirm`, {
     method: 'POST',
+    headers: versionHeaders(version),
     body: JSON.stringify({ category, subcategory }),
   })
 }
 
-export function closeTicket(ticketId: number, payload: TicketClose): Promise<Ticket> {
+export function closeTicket(ticketId: number, payload: TicketClose, version: number): Promise<Ticket> {
   return request(`/tickets/${ticketId}/close`, {
     method: 'POST',
+    headers: versionHeaders(version),
     body: JSON.stringify(payload),
   })
 }

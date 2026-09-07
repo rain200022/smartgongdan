@@ -22,6 +22,7 @@ from app.schemas.solution import (
     TicketSolutionReviewCreate,
 )
 from app.services import ai_analysis_service, search_service, ticket_service
+from app.services import ticket_mutation_service as mutations
 from app.services.ai_service import AIService
 from app.services.embedding_service import EmbeddingService
 
@@ -32,9 +33,11 @@ def generate_solution(
     ticket_id: int,
     ai_service: AIService,
     embedding_service: EmbeddingService,
+    actor: User,
+    expected_version: int | None = None,
 ) -> TicketAISolution:
     ticket = ticket_service.get_ticket(db, ticket_id)
-    ticket_service.ensure_ticket_editable(ticket)
+    mutations.ensure_can_mutate(ticket, actor, expected_version)
     analysis = ai_analysis_service.get_latest_analysis(db, ticket_id)
     results = search_service.search_similar(
         db,
@@ -63,6 +66,9 @@ def generate_solution(
     )
     draft = ai_service.generate_solution(context)
     validated = _validate_draft(draft, context)
+    mutations.stage_mutation(
+        db, ticket, actor=actor, action="solution_generated", expected_version=expected_version
+    )
     record = TicketAISolution(
         ticket_id=ticket.id,
         model_name=ai_service.model_name,
@@ -110,12 +116,19 @@ def review_solution(
     solution_id: int,
     reviewer: User,
     payload: TicketSolutionReviewCreate,
+    expected_version: int | None = None,
 ) -> TicketAISolution:
     ticket = ticket_service.get_ticket(db, ticket_id)
-    ticket_service.ensure_ticket_editable(ticket)
+    mutations.ensure_can_mutate(ticket, reviewer, expected_version)
     solution = get_solution(db, ticket_id=ticket_id, solution_id=solution_id)
     if solution.review is not None:
         raise InvalidSolutionReviewError("AI 建议已经完成审核，不能重复提交")
+    analysis = ai_analysis_service.get_latest_analysis(db, ticket_id)
+    if solution.created_at < analysis.created_at:
+        raise InvalidSolutionReviewError("AI 分析已更新，请重新生成建议后再审核")
+    mutations.stage_mutation(
+        db, ticket, actor=reviewer, action="solution_reviewed", expected_version=expected_version
+    )
     review_values = payload.model_dump()
     if payload.decision is SolutionReviewDecision.REJECTED and payload.rejection_category is None:
         review_values["rejection_category"] = RejectionCategory.OTHER

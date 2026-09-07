@@ -195,3 +195,68 @@ test('切换工单后迟到的请求不会覆盖当前工作台', async ({ page 
     release()
   }
 })
+
+test('认领隔离其他工程师，释放后可接手，旧版本提交保留草稿', async ({ page, browser }) => {
+  await login(page, 'e2e-engineer')
+  await page.goto('/console/tickets/3')
+  await page.getByRole('button', { name: '认领工单', exact: true }).click()
+  await expect(page.getByText('负责人：e2e-engineer · 版本 2', { exact: true })).toBeVisible()
+  const secondContext = await browser.newContext({ baseURL: test.info().project.use.baseURL })
+  const second = await secondContext.newPage()
+  await login(second, 'e2e-engineer-other')
+  await second.goto('/console/tickets/3')
+  await expect(second.getByText('该工单已由其他工程师认领，当前为只读视图。')).toBeVisible()
+  await expect(second.getByLabel('最终解决方案', { exact: true })).toBeDisabled()
+  const denied = await second.request.post('/api/tickets/3/claim')
+  expect(denied.status()).toBe(403)
+  await page.getByRole('button', { name: '释放工单', exact: true }).click()
+  await page.getByRole('button', { name: '确认释放', exact: true }).click()
+  await expect(page.getByRole('button', { name: '认领工单', exact: true })).toBeEnabled()
+  await second.getByRole('button', { name: '加载最新记录', exact: true }).click()
+  await second.getByRole('button', { name: '认领工单', exact: true }).click()
+  await expect(second.getByText('负责人：e2e-engineer-other · 版本 4', { exact: true })).toBeVisible()
+  const draft = '我的现场草稿，不应被冲突或刷新清除。'
+  await page.getByLabel('最终解决方案', { exact: true }).fill(draft)
+  await page.getByRole('button', { name: '关闭工单', exact: true }).click()
+  await page.getByRole('button', { name: '确认关闭', exact: true }).click()
+  await expect(page.getByText('未提交草稿仍保留；加载后请核对最新处理记录，再决定是否提交。')).toBeVisible()
+  await expect(page.getByLabel('最终解决方案', { exact: true })).toHaveValue(draft)
+  await page.getByRole('button', { name: '加载最新记录', exact: true }).last().click()
+  await expect(page.getByLabel('最终解决方案', { exact: true })).toHaveValue(draft)
+  await expect(page.getByLabel('最终解决方案', { exact: true })).toBeDisabled()
+  await expect(page.getByRole('heading', { name: '操作记录', exact: true })).toBeVisible()
+  await secondContext.close()
+})
+
+test('同一工程师另一标签页更新后，旧版本关闭返回冲突且不自动重试', async ({ page }) => {
+  await login(page, 'e2e-engineer')
+  await page.goto('/console/tickets/4')
+  await page.getByLabel('最终解决方案', { exact: true }).fill('保留版本冲突现场结论')
+  const updated = await page.request.patch('/api/tickets/4', {
+    headers: { 'X-Ticket-Version': '1' }, data: { final_priority: 'P1' },
+  })
+  expect(updated.status()).toBe(200)
+  const conflict = page.waitForResponse((response) => response.url().endsWith('/tickets/4/close'))
+  await page.getByRole('button', { name: '关闭工单', exact: true }).click()
+  await page.getByRole('button', { name: '确认关闭', exact: true }).click()
+  expect((await conflict).status()).toBe(409)
+  await page.getByRole('button', { name: '加载最新记录', exact: true }).last().click()
+  await expect(page.getByLabel('最终解决方案', { exact: true })).toHaveValue('保留版本冲突现场结论')
+  await expect(page.getByRole('radio', { name: 'P1', exact: true })).toBeChecked()
+  const current = await page.request.get('/api/tickets/4')
+  expect((await current.json() as { status: string }).status).toBe('open')
+})
+
+test('工单已被另一标签页关闭时保留未提交的原方案供复制', async ({ page }) => {
+  await login(page, 'e2e-engineer')
+  await page.goto('/console/tickets/5')
+  await page.getByLabel('最终解决方案', { exact: true }).fill('尚未提交的独立现场记录')
+  const response = await page.request.post('/api/tickets/5/close', {
+    data: { final_category: '网络/VPN', final_priority: 'P3', resolution: '另一标签页确认已修复' },
+  })
+  expect(response.status()).toBe(200)
+  await page.getByRole('button', { name: '加载最新记录', exact: true }).click()
+  await expect(page.getByText('尚未提交的独立现场记录', { exact: true })).toBeVisible()
+  await expect(page.getByLabel('最终解决方案', { exact: true })).toHaveValue('另一标签页确认已修复')
+  await expect(page.getByLabel('最终解决方案', { exact: true })).toBeDisabled()
+})

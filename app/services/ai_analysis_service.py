@@ -4,8 +4,10 @@ from sqlalchemy.orm import Session
 from app.core.exceptions import AIAnalysisNotFoundError
 from app.models.ai_analysis import JudgeType, TicketAIAnalysisRecord, TicketJudgment
 from app.models.ticket import Ticket
+from app.models.user import User
 from app.schemas.ai_analysis import TicketAIAnalysis
 from app.services import priority_service, ticket_service
+from app.services import ticket_mutation_service as mutations
 from app.services.ai_service import AIService
 
 
@@ -14,10 +16,15 @@ def analyze_ticket(
     *,
     ticket_id: int,
     ai_service: AIService,
+    actor: User,
+    expected_version: int | None = None,
 ) -> TicketAIAnalysisRecord:
     ticket = ticket_service.get_ticket(db, ticket_id)
-    ticket_service.ensure_ticket_editable(ticket)
+    mutations.ensure_can_mutate(ticket, actor, expected_version)
     analysis = ai_service.analyze_ticket(ticket)
+    mutations.stage_mutation(
+        db, ticket, actor=actor, action="analyzed", expected_version=expected_version
+    )
     record = stage_analysis(
         db,
         ticket=ticket,

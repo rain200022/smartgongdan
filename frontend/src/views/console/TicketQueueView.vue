@@ -49,6 +49,7 @@ const columns = [
   { title: '状态', key: 'status', width: 110 },
   { title: '分类', key: 'category', width: 150 },
   { title: '优先级', key: 'priority', width: 110 },
+  { title: '负责人', key: 'assignee', width: 130 },
   { title: '创建时间', key: 'created_at', width: 160 },
 ]
 
@@ -196,6 +197,9 @@ function formatDate(value: string): string {
           </template>
           <template v-else-if="column.key === 'created_at'">
             {{ formatDate(record.created_at) }}
+          </template>
+          <template v-else-if="column.key === 'assignee'">
+            {{ record.assigned_engineer_name || '未认领' }}
           </template>
         </template>
       </a-table>

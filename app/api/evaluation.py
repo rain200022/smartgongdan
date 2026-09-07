@@ -3,7 +3,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
-from app.api.dependencies import CurrentUser, StaffUser
+from app.api.dependencies import CurrentUser, StaffUser, TicketVersion
 from app.core.classification import CLASSIFICATION_TREE
 from app.db.session import get_db
 from app.schemas.evaluation import (
@@ -35,11 +35,17 @@ def get_classification_tree(_user: CurrentUser) -> dict[str, list[str]]:
     response_model=ClassificationConfirmationRead,
 )
 def confirm_classification(
-    ticket_id: int, payload: ClassificationConfirmation, db: DbSession, _staff: StaffUser
+    ticket_id: int,
+    payload: ClassificationConfirmation,
+    db: DbSession,
+    staff: StaffUser,
+    version: TicketVersion = None,
 ) -> ClassificationConfirmationRead:
     ticket = ticket_service.get_ticket(db, ticket_id)
     ticket_service.ensure_ticket_editable(ticket)
-    result = evaluation_service.confirm_classification(db, ticket=ticket, payload=payload)
+    result = evaluation_service.confirm_classification(
+        db, ticket=ticket, payload=payload, actor=staff, expected_version=version
+    )
     return evaluation_service.to_confirmation_read(ticket, result)
 
 

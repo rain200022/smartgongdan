@@ -3,12 +3,13 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.orm import Session
 
-from app.api.dependencies import CurrentUser, StaffUser
+from app.api.dependencies import CurrentUser, StaffUser, TicketVersion
 from app.db.session import get_db
 from app.models.ticket import TicketPriority, TicketStatus
 from app.models.user import UserRole
 from app.schemas.ticket import TicketClose, TicketCreate, TicketList, TicketRead, TicketUpdate
-from app.services import authorization_service, ticket_service
+from app.schemas.ticket_event import TicketEventRead
+from app.services import authorization_service, ticket_mutation_service, ticket_service
 from app.services.embedding_service import EmbeddingService, get_embedding_service
 
 router = APIRouter(prefix="/tickets", tags=["tickets"])
@@ -65,9 +66,15 @@ def get_ticket(ticket_id: int, db: DbSession, user: CurrentUser) -> TicketRead:
 
 @router.patch("/{ticket_id}", response_model=TicketRead)
 def update_ticket(
-    ticket_id: int, payload: TicketUpdate, db: DbSession, _staff: StaffUser
+    ticket_id: int,
+    payload: TicketUpdate,
+    db: DbSession,
+    staff: StaffUser,
+    version: TicketVersion = None,
 ) -> TicketRead:
-    ticket = ticket_service.update_ticket(db, ticket_id, payload)
+    ticket = ticket_service.update_ticket(
+        db, ticket_id, payload, actor=staff, expected_version=version
+    )
     return TicketRead.model_validate(ticket)
 
 
@@ -77,12 +84,42 @@ def close_ticket(
     payload: TicketClose,
     db: DbSession,
     embedding_service: EmbeddingServiceDependency,
-    _staff: StaffUser,
+    staff: StaffUser,
+    version: TicketVersion = None,
 ) -> TicketRead:
     ticket = ticket_service.close_ticket(
         db,
         ticket_id,
         payload,
         embedding_service=embedding_service,
+        actor=staff,
+        expected_version=version,
     )
     return TicketRead.model_validate(ticket)
+
+
+@router.post("/{ticket_id}/claim", response_model=TicketRead)
+def claim_ticket(
+    ticket_id: int, db: DbSession, staff: StaffUser, version: TicketVersion = None
+) -> TicketRead:
+    ticket = ticket_service.claim_ticket(db, ticket_id, actor=staff, expected_version=version)
+    return TicketRead.model_validate(ticket)
+
+
+@router.post("/{ticket_id}/release", response_model=TicketRead)
+def release_ticket(
+    ticket_id: int, db: DbSession, staff: StaffUser, version: TicketVersion = None
+) -> TicketRead:
+    ticket = ticket_service.release_ticket(db, ticket_id, actor=staff, expected_version=version)
+    return TicketRead.model_validate(ticket)
+
+
+@router.get("/{ticket_id}/events", response_model=list[TicketEventRead])
+def list_events(
+    ticket_id: int, db: DbSession, _staff: StaffUser, limit: Limit = 100, offset: Offset = 0
+) -> list[TicketEventRead]:
+    ticket_service.get_ticket(db, ticket_id)
+    return [
+        TicketEventRead.model_validate(item)
+        for item in ticket_mutation_service.list_events(db, ticket_id, limit=limit, offset=offset)
+    ]

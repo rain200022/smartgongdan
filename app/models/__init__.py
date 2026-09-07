@@ -13,6 +13,7 @@ from app.models.solution import (
     TicketSolutionReview,
 )
 from app.models.ticket import Ticket, TicketPriority, TicketStatus
+from app.models.ticket_event import TicketEvent
 from app.models.user import AuthSession, User, UserRole
 
 __all__ = [
@@ -26,6 +27,7 @@ __all__ = [
     "TicketAIAnalysisRecord",
     "TicketAISolution",
     "TicketClassificationEvaluation",
+    "TicketEvent",
     "TicketJudgment",
     "TicketPriority",
     "TicketSolutionReview",

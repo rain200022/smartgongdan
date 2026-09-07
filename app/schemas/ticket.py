@@ -51,8 +51,10 @@ class TicketRead(APIModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
+    version: int
     requester_id: int | None
     assigned_engineer_id: int | None
+    assigned_engineer_name: str | None
     title: str
     description: str
     user_category: str | None

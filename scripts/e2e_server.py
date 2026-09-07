@@ -54,6 +54,7 @@ def create_test_app(database_path: Path) -> "FastAPI":
             ("e2e-user", UserRole.USER),
             ("e2e-other", UserRole.USER),
             ("e2e-engineer", UserRole.ENGINEER),
+            ("e2e-engineer-other", UserRole.ENGINEER),
         ):
             user = create_user(
                 db,

@@ -18,8 +18,10 @@ export interface AuthUser {
 
 export interface Ticket {
   id: number
+  version: number
   requester_id: number | null
   assigned_engineer_id: number | null
+  assigned_engineer_name: string | null
   title: string
   description: string
   user_category: string | null

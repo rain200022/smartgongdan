@@ -4,10 +4,11 @@ from enum import StrEnum
 from pgvector.sqlalchemy import Vector
 from sqlalchemy import DateTime, ForeignKey, Index, String, Text
 from sqlalchemy import Enum as SqlEnum
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.time import utc_now
 from app.db.base import Base
+from app.models.user import User
 
 
 class TicketStatus(StrEnum):
@@ -28,6 +29,7 @@ class Ticket(Base):
     __table_args__ = (Index("ix_tickets_status_created_at", "status", "created_at"),)
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    version: Mapped[int] = mapped_column(default=1, server_default="1")
     requester_id: Mapped[int | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True
     )
@@ -35,6 +37,14 @@ class Ticket(Base):
         ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True
     )
     external_reference: Mapped[str | None] = mapped_column(String(50), unique=True)
+    assigned_engineer: Mapped[User | None] = relationship(
+        foreign_keys=[assigned_engineer_id], lazy="joined"
+    )
+
+    @property
+    def assigned_engineer_name(self) -> str | None:
+        return self.assigned_engineer.display_name if self.assigned_engineer else None
+
     title: Mapped[str] = mapped_column(String(200))
     description: Mapped[str] = mapped_column(Text)
     user_category: Mapped[str | None] = mapped_column(String(100))

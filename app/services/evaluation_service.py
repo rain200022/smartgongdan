@@ -20,6 +20,7 @@ from app.models.solution import (
     TicketSolutionReview,
 )
 from app.models.ticket import Ticket, TicketStatus
+from app.models.user import User
 from app.schemas.evaluation import (
     ClassificationConfirmation,
     ClassificationConfirmationRead,
@@ -33,6 +34,7 @@ from app.schemas.evaluation import (
     SolutionMetrics,
 )
 from app.services import search_service
+from app.services import ticket_mutation_service as mutations
 from app.services.embedding_service import EmbeddingService
 
 DEFAULT_SEARCH_BENCHMARK = Path(__file__).resolve().parents[2] / "data" / "search_evaluation.json"
@@ -87,7 +89,16 @@ def confirm_classification(
     *,
     ticket: Ticket,
     payload: ClassificationConfirmation,
+    actor: User,
+    expected_version: int | None = None,
 ) -> ConfirmationResult:
+    mutations.stage_mutation(
+        db,
+        ticket,
+        actor=actor,
+        action="classification_confirmed",
+        expected_version=expected_version,
+    )
     result = stage_classification_confirmation(db, ticket=ticket, payload=payload)
     db.commit()
     db.refresh(result.engineer_judgment)

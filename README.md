@@ -14,20 +14,20 @@
 1. 用 VS Code 打开本目录，并复制环境配置：
 
    ```powershell
-   Copy-Item .env.example .env
+   if (-not (Test-Path .env)) { Copy-Item .env.example .env }
    uv sync
    Set-Location frontend
    npm install
    Set-Location ..
    ```
 
-2. 安装并启动 Docker Desktop，然后在 VS Code 中依次运行任务（`Terminal > Run Task`）：
+2. 安装并启动 Docker Desktop，然后在 VS Code 中运行任务（`Terminal > Run Task`）：
 
    ```text
-   db: start
-   db: migrate
    app: dev
    ```
+
+   该任务会依次等待数据库健康、应用 Alembic 迁移，再并行启动前后端。启动失败时先查看对应任务的终端输出；不要使用清空数据卷或重置数据库的方式重试。后端任务启用进程级 `PYTHONUTF8=1`，避免 Windows GBK 终端无法输出 FastAPI 启动图标。
 
 3. 首次使用时运行 VS Code 任务 `auth: create user`，按提示创建账号。至少创建一个 `USER` 和一个 `ENGINEER` 或 `ADMIN`。
 
@@ -44,8 +44,9 @@
 也可以直接在终端运行：
 
 ```powershell
-docker compose up -d db
+docker compose up -d --wait db
 uv run alembic upgrade head
+$env:PYTHONUTF8 = '1'
 uv run fastapi dev app/main.py
 ```
 

@@ -4,7 +4,7 @@
     {
       "label": "db: start",
       "type": "shell",
-      "command": "docker compose up -d db",
+      "command": "docker compose up -d --wait db",
       "problemMatcher": []
     },
     {
@@ -35,6 +35,7 @@
       "label": "api: dev",
       "type": "shell",
       "command": "uv run fastapi dev app/main.py",
+      "options": {"env": {"PYTHONUTF8": "1"}},
       "isBackground": true,
       "problemMatcher": []
     },
@@ -75,6 +76,18 @@
     },
     {
       "label": "app: dev",
+      "dependsOrder": "sequence",
+      "dependsOn": ["db: prepare", "app: servers"],
+      "problemMatcher": []
+    },
+    {
+      "label": "db: prepare",
+      "dependsOrder": "sequence",
+      "dependsOn": ["db: start", "db: migrate"],
+      "problemMatcher": []
+    },
+    {
+      "label": "app: servers",
       "dependsOrder": "parallel",
       "dependsOn": ["api: dev", "frontend: dev"],
       "problemMatcher": []
